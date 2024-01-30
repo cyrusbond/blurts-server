@@ -23,7 +23,9 @@ import {
   Scan,
   getScanDetails,
   getAllScanResults,
+  optoutProfile,
 } from "../../../../../functions/server/onerep";
+import { hasPremium } from "../../../../../functions/universal/user";
 
 export interface ScanProgressBody {
   success: boolean;
@@ -48,11 +50,24 @@ export async function GET(
       const latestScan = await getLatestOnerepScanResults(profileId);
       const latestScanId = latestScan.scan?.onerep_scan_id;
 
+      if (typeof latestScanId === "undefined" && hasPremium(session.user)) {
+        // If the user already has Plus, we did not start a manual scan right
+        // away, and the automatic initial scan might not have kicked off yet:
+        return NextResponse.json(
+          { success: true, status: "in_progress" as Scan["status"] },
+          { status: 200 },
+        );
+      }
       if (typeof latestScanId !== "undefined") {
         const scan = await getScanDetails(profileId, latestScanId);
 
         // Store scan results.
         if (scan.status === "finished") {
+          if (hasPremium(session.user)) {
+            // Start sending data removal requests if the user has Plus:
+            await optoutProfile(profileId);
+          }
+
           const allScanResults = await getAllScanResults(profileId);
           await addOnerepScanResults(profileId, allScanResults);
         }

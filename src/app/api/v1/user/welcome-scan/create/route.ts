@@ -9,12 +9,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { logger } from "../../../../../functions/server/logging";
 
 import {
+  activateProfile,
   createProfile,
   createScan,
   isEligibleForFreeScan,
 } from "../../../../../functions/server/onerep";
 import type { CreateProfileRequest } from "../../../../../functions/server/onerep";
-import { meetsAgeRequirement } from "../../../../../functions/universal/user";
+import {
+  hasPremium,
+  meetsAgeRequirement,
+} from "../../../../../functions/universal/user";
 import AppConstants from "../../../../../../appConstants";
 import { getSubscriberByEmail } from "../../../../../../db/tables/subscribers";
 import {
@@ -90,10 +94,15 @@ export async function POST(
         await setOnerepProfileId(subscriber, profileId);
         await setProfileDetails(profileId, profileData);
 
-        // Start exposure scan
-        const scan = await createScan(profileId);
-        const scanId = scan.id;
-        await setOnerepScan(profileId, scanId, scan.status, "manual");
+        if (hasPremium(session.user)) {
+          // Start automatic scanning
+          await activateProfile(profileId);
+        } else {
+          // Start a manual exposure scan
+          const scan = await createScan(profileId);
+          const scanId = scan.id;
+          await setOnerepScan(profileId, scanId, scan.status, "manual");
+        }
 
         return NextResponse.json({ success: true }, { status: 200 });
       }
